@@ -91,7 +91,13 @@ st.markdown("""
 # ── Load & Process Data (cached — runs only once) ────────────────
 @st.cache_resource(show_spinner="Loading movie database & computing similarities...")
 def load_and_build_model():
-    """Load MovieLens CSVs, build content features, compute similarity."""
+    """Load MovieLens CSVs, build content features, store sparse vectors.
+
+    Instead of computing the full NxN similarity matrix (~720 MB for 9,700
+    movies), we keep the sparse term-frequency vectors (~5 MB) and compute
+    cosine similarity on-the-fly per query.  This lets the app run within
+    Render's free-tier 512 MB RAM limit.
+    """
     DATA_DIR = "ml-latest-small"
 
     # Load CSVs
@@ -126,18 +132,17 @@ def load_and_build_model():
     movies["content"] = (movies["genres_clean"] + " " + movies["tags_combined"]).str.strip()
     movies = movies[movies["content"] != ""].reset_index(drop=True)
 
-    # Vectorize & compute similarity
+    # Vectorize — keep sparse vectors instead of dense NxN matrix
     cv = CountVectorizer(max_features=5000, stop_words="english")
     vectors = cv.fit_transform(movies["content"])
-    similarity = cosine_similarity(vectors)
 
     # Final DataFrame
     movies_final = movies[["movieId", "title", "genres", "avg_rating", "tmdbId"]].copy()
 
-    return movies_final, similarity
+    return movies_final, vectors
 
 
-movies, similarity = load_and_build_model()
+movies, vectors = load_and_build_model()
 
 
 # ── Helper Functions ─────────────────────────────────────────────
@@ -158,9 +163,10 @@ def format_genres(genres_str):
 
 
 def recommend(movie):
-    """Find top 5 most similar movies."""
+    """Find top 5 most similar movies (on-the-fly similarity)."""
     movie_index = movies[movies['title'] == movie].index[0]
-    distances = similarity[movie_index]
+    # Compute similarity only for this movie against all others
+    distances = cosine_similarity(vectors[movie_index], vectors).flatten()
     movies_list = sorted(
         list(enumerate(distances)), reverse=True, key=lambda x: x[1]
     )[1:6]
