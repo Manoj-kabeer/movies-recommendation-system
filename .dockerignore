@@ -1,0 +1,9 @@
+myenv/
+*.pkl
+ml-latest-small.zip
+__pycache__/
+*.pyc
+*.pyo
+.vscode/
+.idea/
+.git/
